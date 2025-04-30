@@ -3,10 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
-	"strings"
 )
-
-const startMsg = "start:"
 
 func main() {
 
@@ -54,20 +51,8 @@ func (s *Server) handle(conn net.Conn) {
 			return
 		}
 
-		msgStr := string(buf[:n])
-		if !strings.HasPrefix(msgStr, startMsg) {
-			continue
-		}
-
-		cleanMsg := strings.TrimSpace(strings.TrimPrefix(msgStr, startMsg))
-
-		if cleanMsg == "exit" {
-			fmt.Println("client closed connection")
-			return
-		}
-
-		fmt.Printf("read %d bytes: '%s'\n", n, cleanMsg)
-		resp := fmt.Sprintf("response to '%s'\n", cleanMsg)
+		fmt.Printf("received: %s\n", buf[:n])
+		resp := fmt.Sprintf("response to '%s'\n", buf[:n])
 		_, err = conn.Write([]byte(resp))
 		if err != nil {
 			fmt.Println("write error:", err)
