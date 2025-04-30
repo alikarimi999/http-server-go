@@ -3,28 +3,74 @@ package main
 import (
 	"fmt"
 	"net"
-	"os"
+	"strings"
 )
 
-// Ensures gofmt doesn't remove the "net" and "os" imports above (feel free to remove this!)
-var _ = net.Listen
-var _ = os.Exit
+const startMsg = "start:"
 
 func main() {
-	// You can use print statements as follows for debugging, they'll be visible when running tests.
-	fmt.Println("Logs from your program will appear here!")
 
-	// Uncomment this block to pass the first stage
-	//
-	l, err := net.Listen("tcp", "0.0.0.0:4221")
+	l, err := net.Listen("tcp", "localhost:8080")
 	if err != nil {
-		fmt.Println("Failed to bind to port 4221")
-		os.Exit(1)
+		panic(err)
 	}
-	//
-	_, err = l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+
+	s := Server{
+		listener: l,
+	}
+	s.Start()
+}
+
+type Server struct {
+	listener net.Listener
+}
+
+func (s *Server) Start() {
+	fmt.Printf("server started on %s - %s\n", s.listener.Addr().Network(), s.listener.Addr().String())
+	defer s.Close()
+
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			fmt.Println("accept error:", err)
+		}
+		go s.handle(conn)
+	}
+}
+
+func (s *Server) Close() {
+	s.listener.Close()
+}
+
+func (s *Server) handle(conn net.Conn) {
+	defer conn.Close()
+
+	fmt.Printf("connection from %v\n", conn.RemoteAddr().String())
+	for {
+		buf := make([]byte, 1024)
+		n, err := conn.Read(buf)
+		if err != nil {
+			fmt.Println("read error:", err)
+			return
+		}
+
+		msgStr := string(buf[:n])
+		if !strings.HasPrefix(msgStr, startMsg) {
+			continue
+		}
+
+		cleanMsg := strings.TrimSpace(strings.TrimPrefix(msgStr, startMsg))
+
+		if cleanMsg == "exit" {
+			fmt.Println("client closed connection")
+			return
+		}
+
+		fmt.Printf("read %d bytes: '%s'\n", n, cleanMsg)
+		resp := fmt.Sprintf("response to '%s'\n", cleanMsg)
+		_, err = conn.Write([]byte(resp))
+		if err != nil {
+			fmt.Println("write error:", err)
+		}
 	}
 }
