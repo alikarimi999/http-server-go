@@ -7,13 +7,24 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/alexflint/go-arg"
 )
 
 const (
 	httpVersion = "HTTP/1.1"
 )
 
+var baseDirectory = ""
+
+type Args struct {
+	Directory string `arg:"-d,--directory" default:"." help:"Set root directory for serving files"`
+}
+
 func main() {
+	args := Args{}
+	arg.MustParse(&args)
+	baseDirectory = args.Directory
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -83,9 +94,8 @@ func (s *Server) handle(conn net.Conn) {
 				w.Flush()
 			} else if strings.HasPrefix(path, "/files/") {
 				fileName := strings.SplitAfter(path, "/files/")[1]
-				msg, err := os.ReadFile("/tmp/" + fileName)
+				msg, err := os.ReadFile(baseDirectory + fileName)
 				if err != nil {
-					fmt.Println(err)
 					res := NewResponse(version, http.StatusNotFound, "")
 					res.Write(w)
 					return
