@@ -80,6 +80,15 @@ func (s *Server) handle(conn net.Conn) {
 					fmt.Println(n, err)
 				}
 				w.Flush()
+			} else if strings.HasPrefix(path, "/user-agent") {
+				userAgent := header["User-Agent"]
+				res := NewResponse(version, http.StatusOK, userAgent)
+				res.SetHeader("Content-Type", "text/plain")
+				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(userAgent)))
+				if err := res.Write(w); err != nil {
+					fmt.Println(err)
+				}
+
 			} else if strings.HasPrefix(path, "/echo/") {
 				msg := strings.SplitAfter(path, "/echo/")[1]
 
