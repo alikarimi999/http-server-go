@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net"
 	"net/http"
@@ -96,12 +98,12 @@ func (s *Server) handle(conn net.Conn) {
 				fileName := strings.SplitAfter(path, "/files/")[1]
 				msg, err := os.ReadFile(baseDirectory + fileName)
 				if err != nil {
-					res := NewResponse(version, http.StatusNotFound, "")
+					res := NewResponse(version, http.StatusNotFound, "", header)
 					res.Write(w)
 					return
 				}
 
-				res := NewResponse(version, http.StatusOK, string(msg))
+				res := NewResponse(version, http.StatusOK, string(msg), header)
 				res.SetHeader("Content-Type", "application/octet-stream")
 				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(msg)))
 				if err := res.Write(w); err != nil {
@@ -110,7 +112,7 @@ func (s *Server) handle(conn net.Conn) {
 
 			} else if strings.HasPrefix(path, "/user-agent") {
 				userAgent := header["User-Agent"]
-				res := NewResponse(version, http.StatusOK, userAgent)
+				res := NewResponse(version, http.StatusOK, userAgent, header)
 				res.SetHeader("Content-Type", "text/plain")
 				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(userAgent)))
 				if err := res.Write(w); err != nil {
@@ -120,7 +122,7 @@ func (s *Server) handle(conn net.Conn) {
 			} else if strings.HasPrefix(path, "/echo/") {
 				msg := strings.SplitAfter(path, "/echo/")[1]
 
-				res := NewResponse(version, http.StatusOK, msg)
+				res := NewResponse(version, http.StatusOK, msg, header)
 				res.SetHeader("Content-Type", "text/plain")
 				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(msg)))
 
@@ -153,7 +155,7 @@ func (s *Server) handle(conn net.Conn) {
 					fmt.Println(err)
 					return
 				}
-				res := NewResponse(version, http.StatusCreated, "")
+				res := NewResponse(version, http.StatusCreated, "", header)
 				res.Write(w)
 
 			}
@@ -234,14 +236,22 @@ type Response struct {
 	statusCode int
 	header     map[string]string
 	body       string
+	encoder    Encoder
 }
 
-func NewResponse(version string, statusCode int, body string) *Response {
-	return &Response{
+func NewResponse(version string, statusCode int, body string, headers map[string]string) *Response {
+	r := &Response{
 		version:    version,
 		statusCode: statusCode,
 		body:       body,
 	}
+
+	if headers["Accept-Encoding"] == "gzip" {
+		r.encoder = &gzipEncoder{}
+		r.SetHeader("Content-Encoding", "gzip")
+	}
+
+	return r
 }
 
 func (r *Response) SetHeader(key, value string) {
@@ -261,7 +271,16 @@ func (r *Response) Write(w *bufio.Writer) error {
 	}
 
 	res += "\r\n"
-	res += r.body
+	body := r.body
+
+	if r.encoder != nil {
+		encoded, err := r.encoder.Encode([]byte(body))
+		if err != nil {
+			return err
+		}
+		body = string(encoded)
+	}
+	res += body
 
 	_, err := w.Write([]byte(res))
 	if err != nil {
@@ -269,4 +288,34 @@ func (r *Response) Write(w *bufio.Writer) error {
 	}
 
 	return w.Flush()
+}
+
+func (r *Response) SetEncoder(encoder Encoder) {
+	r.encoder = encoder
+}
+
+type Encoder interface {
+	Encode(data []byte) ([]byte, error)
+}
+
+type gzipEncoder struct{}
+
+func (e *gzipEncoder) Encode(data []byte) ([]byte, error) {
+	return compressToGzip(data)
+}
+
+func compressToGzip(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+
+	_, err := gz.Write(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
