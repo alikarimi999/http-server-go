@@ -135,6 +135,28 @@ func (s *Server) handle(conn net.Conn) {
 				}
 				w.Flush()
 			}
+		} else if method == "POST" {
+			if strings.HasPrefix(path, "/files/") {
+				fileName := strings.SplitAfter(path, "/files/")[1]
+				body, err := parseBody(r, header)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				err = os.MkdirAll(baseDirectory, 0755)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				if err := os.WriteFile(baseDirectory+fileName, []byte(body), 0644); err != nil {
+					fmt.Println(err)
+					return
+				}
+				res := NewResponse(version, http.StatusCreated, "")
+				res.Write(w)
+
+			}
 		}
 	}
 }
@@ -171,6 +193,27 @@ func parseHeader(r *bufio.Reader) (map[string]string, error) {
 	}
 
 	return header, nil
+}
+
+func parseBody(r *bufio.Reader, headers map[string]string) (string, error) {
+	lengthStr, ok := headers["Content-Length"]
+	if !ok {
+		return "", fmt.Errorf("missing Content-Length header")
+	}
+
+	var length int
+	_, err := fmt.Sscanf(lengthStr, "%d", &length)
+	if err != nil {
+		return "", fmt.Errorf("invalid Content-Length: %v", err)
+	}
+
+	body := make([]byte, length)
+	_, err = r.Read(body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
 }
 
 func parseRequestLine(r *bufio.Reader) (string, string, string, error) {
