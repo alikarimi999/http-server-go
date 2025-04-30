@@ -105,7 +105,6 @@ func (s *Server) handle(conn net.Conn) {
 
 				res := NewResponse(version, http.StatusOK, string(msg), header)
 				res.SetHeader("Content-Type", "application/octet-stream")
-				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(msg)))
 				if err := res.Write(w); err != nil {
 					fmt.Println(err)
 				}
@@ -114,7 +113,6 @@ func (s *Server) handle(conn net.Conn) {
 				userAgent := header["User-Agent"]
 				res := NewResponse(version, http.StatusOK, userAgent, header)
 				res.SetHeader("Content-Type", "text/plain")
-				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(userAgent)))
 				if err := res.Write(w); err != nil {
 					fmt.Println(err)
 				}
@@ -124,7 +122,6 @@ func (s *Server) handle(conn net.Conn) {
 
 				res := NewResponse(version, http.StatusOK, msg, header)
 				res.SetHeader("Content-Type", "text/plain")
-				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(msg)))
 
 				if err := res.Write(w); err != nil {
 					fmt.Println(err)
@@ -281,15 +278,6 @@ func (r *Response) SetHeader(key, value string) {
 }
 
 func (r *Response) Write(w *bufio.Writer) error {
-	var res string
-	responseLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.statusCode, http.StatusText(r.statusCode))
-	res += responseLine
-
-	for key, value := range r.header {
-		res += fmt.Sprintf("%s: %s\r\n", key, value)
-	}
-
-	res += "\r\n"
 	body := r.body
 
 	if r.encoder != nil {
@@ -299,6 +287,19 @@ func (r *Response) Write(w *bufio.Writer) error {
 		}
 		body = string(encoded)
 	}
+
+	var res string
+	responseLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.statusCode, http.StatusText(r.statusCode))
+	res += responseLine
+
+	for key, value := range r.header {
+		res += fmt.Sprintf("%s: %s\r\n", key, value)
+	}
+
+	res += fmt.Sprintf("Content-Length: %d\r\n", len(body))
+
+	res += "\r\n"
+
 	res += body
 
 	_, err := w.Write([]byte(res))
