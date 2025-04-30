@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -80,6 +81,23 @@ func (s *Server) handle(conn net.Conn) {
 					fmt.Println(n, err)
 				}
 				w.Flush()
+			} else if strings.HasPrefix(path, "/files/") {
+				fileName := strings.SplitAfter(path, "/files/")[1]
+				msg, err := os.ReadFile("/tmp/" + fileName)
+				if err != nil {
+					fmt.Println(err)
+					res := NewResponse(version, http.StatusNotFound, "")
+					res.Write(w)
+					return
+				}
+
+				res := NewResponse(version, http.StatusOK, string(msg))
+				res.SetHeader("Content-Type", "application/octet-stream")
+				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(msg)))
+				if err := res.Write(w); err != nil {
+					fmt.Println(err)
+				}
+
 			} else if strings.HasPrefix(path, "/user-agent") {
 				userAgent := header["User-Agent"]
 				res := NewResponse(version, http.StatusOK, userAgent)
