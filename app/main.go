@@ -10,7 +10,7 @@ const startMsg = "start:"
 
 func main() {
 
-	l, err := net.Listen("tcp", "localhost:9090")
+	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
 		panic(err)
 	}
