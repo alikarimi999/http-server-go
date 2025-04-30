@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 )
 
@@ -79,6 +80,17 @@ func (s *Server) handle(conn net.Conn) {
 					fmt.Println(n, err)
 				}
 				w.Flush()
+			} else if strings.HasPrefix(path, "/echo/") {
+				msg := strings.SplitAfter(path, "/echo/")[1]
+
+				res := NewResponse(version, http.StatusOK, msg)
+				res.SetHeader("Content-Type", "text/plain")
+				res.SetHeader("Content-Length", fmt.Sprintf("%d", len(msg)))
+
+				if err := res.Write(w); err != nil {
+					fmt.Println(err)
+				}
+
 			} else {
 				n, err := w.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 				if err != nil {
@@ -135,4 +147,46 @@ func parseRequestLine(r *bufio.Reader) (string, string, string, error) {
 		return parts[0], parts[1], parts[2], nil
 	}
 	return "", "", "", fmt.Errorf("invalid request line: %s", line)
+}
+
+type Response struct {
+	version    string
+	statusCode int
+	header     map[string]string
+	body       string
+}
+
+func NewResponse(version string, statusCode int, body string) *Response {
+	return &Response{
+		version:    version,
+		statusCode: statusCode,
+		body:       body,
+	}
+}
+
+func (r *Response) SetHeader(key, value string) {
+	if r.header == nil {
+		r.header = make(map[string]string)
+	}
+	r.header[key] = value
+}
+
+func (r *Response) Write(w *bufio.Writer) error {
+	var res string
+	responseLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.statusCode, http.StatusText(r.statusCode))
+	res += responseLine
+
+	for key, value := range r.header {
+		res += fmt.Sprintf("%s: %s\r\n", key, value)
+	}
+
+	res += "\r\n"
+	res += r.body
+
+	_, err := w.Write([]byte(res))
+	if err != nil {
+		return err
+	}
+
+	return w.Flush()
 }
