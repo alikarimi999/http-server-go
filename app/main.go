@@ -52,8 +52,7 @@ func (s *Server) handle(conn net.Conn) {
 		}
 
 		fmt.Printf("received: %s\n", buf[:n])
-		resp := fmt.Sprintf("response to '%s'\n", buf[:n])
-		_, err = conn.Write([]byte(resp))
+		_, err = conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 		if err != nil {
 			fmt.Println("write error:", err)
 		}
