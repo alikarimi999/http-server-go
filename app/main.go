@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -61,7 +62,9 @@ func (s *Server) Close() {
 }
 
 func (s *Server) handle(conn net.Conn) {
+	var close bool
 	defer conn.Close()
+
 	fmt.Printf("connection from %v\n", conn.RemoteAddr().String())
 
 	r := bufio.NewReader(conn)
@@ -70,7 +73,9 @@ func (s *Server) handle(conn net.Conn) {
 	for {
 		method, path, version, err := parseRequestLine(r)
 		if err != nil {
-			fmt.Println("parse request line error:", err)
+			if err != io.EOF {
+				fmt.Println("parse request line error:", err)
+			}
 			return
 		}
 
@@ -85,54 +90,42 @@ func (s *Server) handle(conn net.Conn) {
 			return
 		}
 
-		fmt.Printf("request: '%s %s %s'\n", method, path, version)
-		fmt.Println("header: ", header)
+		// fmt.Printf("request: '%s %s %s'\n", method, path, version)
+		// fmt.Println("header: ", header)
+		if header["Connection"] == "close" {
+			close = true
+		}
+		var res *Response
+
 		if method == "GET" {
 			if path == "/" {
-				n, err := w.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-				if err != nil {
-					fmt.Println(n, err)
-				}
-				w.Flush()
+				res = NewResponse(version, http.StatusOK, "", header)
 			} else if strings.HasPrefix(path, "/files/") {
 				fileName := strings.SplitAfter(path, "/files/")[1]
 				msg, err := os.ReadFile(baseDirectory + fileName)
 				if err != nil {
-					res := NewResponse(version, http.StatusNotFound, "", header)
-					res.Write(w)
-					return
-				}
-
-				res := NewResponse(version, http.StatusOK, string(msg), header)
-				res.SetHeader("Content-Type", "application/octet-stream")
-				if err := res.Write(w); err != nil {
-					fmt.Println(err)
+					res = NewResponse(version, http.StatusNotFound, "", header)
+				} else {
+					res = NewResponse(version, http.StatusOK, string(msg), header)
+					res.SetHeader("Content-Type", "application/octet-stream")
+					if err := res.Write(w); err != nil {
+						fmt.Println(err)
+					}
 				}
 
 			} else if strings.HasPrefix(path, "/user-agent") {
 				userAgent := header["User-Agent"]
-				res := NewResponse(version, http.StatusOK, userAgent, header)
+				res = NewResponse(version, http.StatusOK, userAgent, header)
 				res.SetHeader("Content-Type", "text/plain")
-				if err := res.Write(w); err != nil {
-					fmt.Println(err)
-				}
 
 			} else if strings.HasPrefix(path, "/echo/") {
 				msg := strings.SplitAfter(path, "/echo/")[1]
 
-				res := NewResponse(version, http.StatusOK, msg, header)
+				res = NewResponse(version, http.StatusOK, msg, header)
 				res.SetHeader("Content-Type", "text/plain")
 
-				if err := res.Write(w); err != nil {
-					fmt.Println(err)
-				}
-
 			} else {
-				n, err := w.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-				if err != nil {
-					fmt.Println(n, err)
-				}
-				w.Flush()
+				res = NewResponse(version, http.StatusNotFound, "", header)
 			}
 		} else if method == "POST" {
 			if strings.HasPrefix(path, "/files/") {
@@ -152,9 +145,16 @@ func (s *Server) handle(conn net.Conn) {
 					fmt.Println(err)
 					return
 				}
-				res := NewResponse(version, http.StatusCreated, "", header)
-				res.Write(w)
+				res = NewResponse(version, http.StatusCreated, "", header)
 
+			}
+		}
+		if res != nil {
+			if err := res.Write(w); err != nil {
+				fmt.Println(err)
+			}
+			if close {
+				return
 			}
 		}
 	}
@@ -243,6 +243,10 @@ func NewResponse(version string, statusCode int, body string, headers map[string
 		body:       body,
 	}
 
+	if headers["Connection"] == "close" {
+		r.SetHeader("Connection", "close")
+	}
+
 	if validTypes := extractValidCompressionTypes(headers["Accept-Encoding"]); len(validTypes) > 0 {
 		for _, t := range validTypes {
 			if t == "gzip" {
@@ -300,7 +304,9 @@ func (r *Response) Write(w *bufio.Writer) error {
 
 	res += "\r\n"
 
-	res += body
+	if body != "" {
+		res += body
+	}
 
 	_, err := w.Write([]byte(res))
 	if err != nil {
