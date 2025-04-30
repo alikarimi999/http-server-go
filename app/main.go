@@ -246,12 +246,31 @@ func NewResponse(version string, statusCode int, body string, headers map[string
 		body:       body,
 	}
 
-	if headers["Accept-Encoding"] == "gzip" {
-		r.encoder = &gzipEncoder{}
-		r.SetHeader("Content-Encoding", "gzip")
+	if validTypes := extractValidCompressionTypes(headers["Accept-Encoding"]); len(validTypes) > 0 {
+		for _, t := range validTypes {
+			if t == "gzip" {
+				r.encoder = &gzipEncoder{}
+				r.SetHeader("Content-Encoding", "gzip")
+				break
+			}
+		}
 	}
 
 	return r
+}
+
+func extractValidCompressionTypes(acceptEncoding string) []string {
+	if acceptEncoding == "" {
+		return []string{}
+	}
+	types := strings.Split(acceptEncoding, ",")
+	var validTypes []string
+	for _, t := range types {
+		if strings.Contains(t, "gzip") {
+			validTypes = append(validTypes, "gzip")
+		}
+	}
+	return validTypes
 }
 
 func (r *Response) SetHeader(key, value string) {
